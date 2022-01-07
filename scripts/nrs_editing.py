@@ -71,8 +71,8 @@ def save_meta_log(target_video, output_base_path):
 
 
 
-
-def frame_cutting(target_video):
+# 22.01.07 hg modify, 기존 target_video 내부에 생성 => 설정된 frame_save_path 생성되도록 변경
+def frame_cutting(target_video, frame_save_path):
     import sys
     import os    
 
@@ -85,12 +85,13 @@ def frame_cutting(target_video):
     from core.utils.ffmpegHelper import ffmpegHelper
 
     # save_path 
-    frame_save_path = os.path.join(extract_target_video_path(target_video), 'frames')
     os.makedirs(frame_save_path, exist_ok=True)
 
-    # frame cutting -> save to '/data3/DATA/IMPORT/211220/12_14/gangbuksamsung_127case/L_1/04_GS4_99_L_1_01/frames/frame-000000000.jpg'
+    # frame cutting -> save to '$ frame_save_path~/frame-000000000.jpg'
     ffmpeg_helper = ffmpegHelper(target_video, frame_save_path)
     ffmpeg_helper.cut_frame_total()
+
+    return frame_save_path
 
 
 def get_experiment_args():
@@ -120,7 +121,8 @@ def get_experiment_args():
     return args
 
 
-def inference(target_video, output_path, model_path = '/NRS_EDITING/logs_sota/mobilenetv3_large_100-general-rs/version_1/checkpoints/epoch=19-Mean_metric=0.9903-best.ckpt'):
+# 22.01.17 hg modify, InfernceDB독립사용을 위해 target_video 변수를 target_dir로 변경하고 infernce_interval parameter를 추가하였습니다.
+def inference(target_dir, inference_interval, result_save_path, model_path):
     '''
     inference
     result_save_path : /data3/DATA/IMPORT/211220/12_14/gangbuksamsung_127case/L_1/04_GS4_99_L_1_01/results/04_GS4_99_L_1_01.json
@@ -142,28 +144,20 @@ def inference(target_video, output_path, model_path = '/NRS_EDITING/logs_sota/mo
     ### test inference module
     from core.api.trainer import CAMIO
     from core.api.inference import InferenceDB # inference module
-    from core.api.evaluation import Evaluator # evaluation module
-    from core.utils.metric import MetricHelper # metric helper (for calc CR, OR, mCR, mOR)
-    from core.utils.logger import Report # report helper (for experiments reuslts and inference results)
-
-    from core.api.visualization import VisualTool # visual module
+    # 22.01.17 hg modify, 해당 inference 함수 사용시 사용하지 않는 module import문을 제거하였습니다.
 
     print('\ninferencing ...')
 
-
-    target_frame_path = os.path.join(extract_target_video_path(target_video), 'frames')
-    result_save_path = os.path.join(output_path, 'results') 
     os.makedirs(result_save_path, exist_ok=True)
 
+    # 22.01.17 hg comment, args는 model 불러올떄만 사용하고, InferencDB사용시에 args 사용을 제거하였습니다.
     args = get_experiment_args()
 
     model = CAMIO.load_from_checkpoint(model_path, args=args) # ckpt
     model = model.cuda()
 
-    db_path = target_frame_path
-
     # Inference module
-    inference = InferenceDB(model, db_path, args.inference_interval) # Inference object
+    inference = InferenceDB(model, target_dir, inference_interval) # 22.01.17 hg modify, InferenceDB 사용시 기존 args.inference_interval 에서 function param으로 변경하였습니다.
     predict_list, target_img_list, target_frame_idx_list = inference.start() # call start
 
     # print(predict_list)
@@ -185,7 +179,14 @@ def inference(target_video, output_path, model_path = '/NRS_EDITING/logs_sota/mo
     return predict_csv_path
 
 
-def video_editing(predict_csv_path, output_path):
+## 4. 22.01.07 hg new add, save annotation by inference (hvat form)
+def report_annotation(predict_csv_path, result_save_path):
+    pass
+
+
+
+
+def video_editing(predict_csv_path, result_save_path):
     import os
 
     # TODO NRS video editing
@@ -195,7 +196,6 @@ def video_editing(predict_csv_path, output_path):
 
     print('\nvideo editing ...')
     print(predict_csv_path)
-    print(os.path.join(output_path, 'results'))
 
 
 
@@ -250,6 +250,12 @@ def main():
     input_path = '/data3/DATA/IMPORT/211220/12_14/gangbuksamsung_127case'
     output_base_path = '/raid/save_output'
 
+     # 22.01.07 hg comment, 우선 모델 불어올때만 args가 이용되고, 나머지는 최대한 args에 의존되지 않도록 처리하기 위해 변수화 시켰습니다.
+     # 추후 args로 받아올 경우 해당 변수를 args. 로 초기화
+    inference_interval = 30
+    model_path = '/NRS_EDITING/logs_sota/mobilenetv3_large_100-general-rs/version_1/checkpoints/epoch=19-Mean_metric=0.9903-best.ckpt'
+
+
     import os
     from core.utils.misc import save_dict_to_csv, prepare_inference_aseets, get_inference_model_path, \
     set_args_per_stage, check_hem_online_mode, clean_paging_chache
@@ -268,7 +274,7 @@ def main():
             os.makedirs(output_path, exist_ok=True)
             print('*[output path] {}\n'.format(output_path))
             
-            if file.split('.')[-1] not in ['mp4', 'mpg']: # extention 예외 처리 ['mp4', 'mpg']
+            if file.split('.')[-1] not in ['mp4']: # extention 예외 처리 ['mp4'] # 22.01.07 hg comment, sanity한 ffmpeg module 사용을 위해 우선 .mp4 만 사용하는 것이 좋을 것 같습니다.
                 continue
 
             if check_exist_dupli_video(target_video, output_base_path): # True: 중복된 비디오 있음. False : 중복된 비디오 없음.
@@ -282,16 +288,23 @@ def main():
             else:
                 print("\nINPUT PATH and OUTPUT PATH are same. No duplicating : {}\n".format(input_path))
 
-            ## 2. 비디오 전처리 (frmae 추출) -> 임시 디렉토리
-            # frame_cutting(target_video)
-
-            ## 3. inference (비디오 단위) -> 저장 디렉토리 & result csv 생성
-            predict_csv_path = inference(target_video, output_path) # model_path 는 args 로 받아도 될 듯.
-
-            ## 4. 비디오 편집 (ffmpep script)
-            video_editing(predict_csv_path, output_path)
             
-            ## 5. meta_log 파일 생성 & 임시 디렉토리 삭제
+            # 22.01.07 hg comment, 각 사용함수 내부에 결과가 저장되는 dir이 따로따로 조합되어 결과 저장경로를 하위까지 조합하여 parameter로 넘겨주었습니다. (~/frames, ~/results)
+            
+            ## 2. 비디오 전처리 (frmae 추출) -> 임시 디렉토리
+            frame_save_path = frame_cutting(target_video, frame_save_path = os.path.join(output_path, 'frames')) # 22.01.07 hg modify, output_path에 처리되도록 변경 및 processed dir 반환
+
+            ## 3. inference (비디오 단위) -> 저장 디렉토리 & result csv 생성 
+            # 22.01.07 hg modify, target_video -> frame_save_path, inference_interval 추가
+            predict_csv_path = inference(target_dir = frame_save_path, inference_interval = inference_interval, result_save_path = os.path.join(output_path, 'results'), model_path = model_path) # model_path 는 args 로 받아도 될 듯.
+            
+            ## 4. 22.01.07 hg new add, save annotation by inference (hvat form)
+            report_annotation(predict_csv_path, result_save_path = os.path.join(output_path, 'results'))
+
+            ## 5. 비디오 편집 (ffmpep script)
+            video_editing(predict_csv_path, result_save_path = os.path.join(output_path, 'results'))
+            
+            ## 6. meta_log 파일 생성 & 임시 디렉토리 삭제
             save_meta_log(target_video, output_base_path)
 
             exit(0)
