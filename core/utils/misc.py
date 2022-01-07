@@ -1,3 +1,91 @@
+import time
+import datetime
+from itertools import groupby
+
+def encode_list(s_list): # run-length encoding from list
+        return [[len(list(group)), key] for key, group in groupby(s_list)] # [[length, value], [length, value]...]
+
+def decode_list(run_length): # run_length -> [0,1,1,1,1,0 ...]
+        decode_list = []
+
+        for length, group in run_length : 
+            decode_list += [group] * length
+
+        return decode_list
+
+def idx_to_time(idx, fps) :
+        time_s = idx // fps
+        frame = int(idx % fps)
+
+        converted_time = str(datetime.timedelta(seconds=time_s))
+        converted_time = converted_time + '.' + str(frame)
+
+        return converted_time
+
+
+def get_current_time():
+    startTime = time.time()
+    s_tm = time.localtime(startTime)
+    
+    return time.strftime('%Y-%m-%d-%H:%M:%S', s_tm), time.strftime('%Y-%m-%d %I:%M:%S %p', s_tm)
+
+
+def get_rs_time_chunk(event_sequence, video_fps, inference_interval):
+
+    RS_CLASS, NRS_CLASS = (0,1)
+    rs_chunk = []
+
+    # event_sequence = [0,0,1,0,1,0,0,1,1,1,1,1,0,0]
+    encoded_list = encode_list(event_sequence)
+     # [[2, 0], [1, 1], [1, 0], [1, 1], [2, 0], [5, 1], [2, 0]] // total:14
+     
+    sequence_idx = 0
+    
+    for sequence_cnt, label in encoded_list:
+        
+        if label == RS_CLASS:
+            start_time = idx_to_time((sequence_idx * inference_interval), video_fps)
+            duration_time = idx_to_time((sequence_cnt * inference_interval), video_fps)
+            rs_chunk.append([start_time, duration_time])
+
+        sequence_idx += sequence_cnt # start frame idx
+    
+    if rs_chunk: # event
+        pass
+        # print(rs_chunk)
+        # TO-DO check video last?
+        # last_start_time, last_duration_time = rs_chunk[-1]
+
+    return rs_chunk
+
+def get_nrs_frame_chunk(event_sequence, inference_interval):
+
+    RS_CLASS, NRS_CLASS = (0,1)
+    nrs_chunk = []
+
+    # event_sequence = [0,0,1,0,1,0,0,1,1,1,1,1,0,0]
+    encoded_list = encode_list(event_sequence)
+     # [[2, 0], [1, 1], [1, 0], [1, 1], [2, 0], [5, 1], [2, 0]] // total:14
+     
+    sequence_idx = 0
+    
+    for sequence_cnt, label in encoded_list:
+        
+        if label == NRS_CLASS:
+            start_frame = sequence_idx * inference_interval
+            duration_frame = sequence_cnt * inference_interval
+            end_frame = (start_frame + duration_frame) - 1
+            nrs_chunk.append([start_frame, end_frame])
+
+        sequence_idx += sequence_cnt # start frame idx
+    
+    if nrs_chunk: # event
+        pass
+        # print(nrs_chunk)
+        # TO-DO check video last?
+
+    return nrs_chunk
+
 # inference_flow.py에서 가져옴
 def clean_paging_chache():
     import subprocess # for CLEAR PAGING CACHE
