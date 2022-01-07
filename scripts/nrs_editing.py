@@ -257,9 +257,6 @@ def main():
 
 
     import os
-    from core.utils.misc import save_dict_to_csv, prepare_inference_aseets, get_inference_model_path, \
-    set_args_per_stage, check_hem_online_mode, clean_paging_chache
-    
 
     for (root, dirs, files) in os.walk(input_path):
 
