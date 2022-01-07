@@ -179,25 +179,127 @@ def inference(target_dir, inference_interval, result_save_path, model_path):
     return predict_csv_path
 
 
-## 4. 22.01.07 hg new add, save annotation by inference (hvat form)
-def report_annotation(predict_csv_path, result_save_path):
-    pass
+def get_event_sequence_from_csv(predict_csv_path):
+    import pandas as pd
+
+    return pd.read_csv(predict_csv_path)['predict'].values.tolist()
 
 
+def get_video_meta_info_from_ffmpeg(video_path):
+    from core.utils.ffmpegHelper import ffmpegHelper
+
+    print('\n\n \t\t <<<<< GET META INFO FROM FFMPEG >>>>> \t\t \n\n')
+
+    ffmpeg_helper = ffmpegHelper(video_path)
+    fps = ffmpeg_helper.get_video_fps()
+    video_len = ffmpeg_helper.get_video_length()
+    width, height = ffmpeg_helper.get_video_resolution()
+
+    return fps, video_len, width, height
+
+def extract_video_clip(video_path, results_dir, start_time, duration):
+    from core.utils.ffmpegHelper import ffmpegHelper
+
+    ffmpeg_helper = ffmpegHelper(video_path, results_dir)
+    ffmpeg_helper.extract_video_clip(start_time, duration)
 
 
-def video_editing(predict_csv_path, result_save_path):
+def parse_clips_paths(clips_root_dir):
     import os
+    import glob
+    from natsort import natsort
 
-    # TODO NRS video editing
-    # 1. csv_path 입력하여 -> json 생성 (저장 경로 : result_save_path)
-    # 2. input 비디오 & results 폴더 복사 (만약 input path, output path 가 동일하면 해당 과정 생략)
-    # 3. json 기반 편집 (편집된 결과 저장 경로: )
+    target_clip_paths = glob.glob(os.path.join(clips_root_dir, 'clip-*.mp4'))
+    target_clip_paths = natsort.natsorted(target_clip_paths)
+
+    save_path = os.path.join(clips_root_dir, 'clips.txt')
+
+    logging = ''
+
+    for clip_path in target_clip_paths:
+        txt = 'file \'{}\''.format(os.path.abspath(clip_path))
+        logging += txt + '\n'
+    
+    print(logging)
+
+    # save txt
+    with open(save_path, 'w') as f :
+        f.write(logging)
+
+    return save_path
+
+
+def clips_to_video(clips_root_dir, merge_path):
+    from core.utils.ffmpegHelper import ffmpegHelper
+
+    # parsing clip video list 
+    input_txt_path = parse_clips_paths(clips_root_dir)
+
+    ffmpeg_helper = ffmpegHelper("dummy", "dummy")
+    ffmpeg_helper.merge_video_clip(input_txt_path, merge_path)
+
+
+## 4. 22.01.07 hg new add, save annotation by inference (hvat form)
+def report_annotation(frameRate, totalFrame, width, height, name, event_sequence, inference_interval, result_save_path):
+    from core.utils.report import ReportAnnotation
+    from core.utils.misc import get_nrs_frame_chunk, get_current_time
+    
+    ### static meta data ###
+    createdAt = get_current_time()[0]
+    updatedAt = createdAt
+    _id = "61efa"
+    annotationType = "NRS"
+    annotator = "30"
+    label = {"1": "NonRelevantSurgery"}
+    ### ### ### ### ### ###
+
+    nrs_frame_chunk = get_nrs_frame_chunk(event_sequence, inference_interval)
+
+    annotation_report = ReportAnnotation(result_save_path) # load Report module
+
+    # set meta info
+    annotation_report.set_total_report(totalFrame, frameRate, width, height, _id, annotationType, createdAt, updatedAt, annotator, name, label)
+    
+    # add nrs annotation info
+    nrs_cnt = len(nrs_frame_chunk)
+    for i, (start_frame, end_frame) in enumerate(nrs_frame_chunk, 1):
+        # print('\n\n[{}] \t {} - {}'.format(i, start_frame, end_frame))
+
+        # check over totalFrame on last annotation (because of quntization? when set up inference_interval > 1)
+        if nrs_cnt == i and end_frame >= totalFrame: 
+            end_frame = totalFrame - 1
+
+        annotation_report.add_annotation_report(start_frame, end_frame, code=1)
+
+    annotation_report.save_report()
+
+## 5. 22.01.07 hg write, inference_interval, video_fps는 clips의 extration time 계산시 필요
+def video_editing(video_path, event_sequence, editted_video_path, inference_interval, video_fps):
+    import os
+    from core.utils.misc import get_rs_time_chunk
 
     print('\nvideo editing ...')
-    print(predict_csv_path)
+
+    # temp process path
+    temp_process_dir = os.path.dirname(editted_video_path) # clips, 편한곳에 생성~(현재는 edit되는 비디오 밑에 ./clips에서 작업)
+    temp_clip_dir = os.path.join(temp_process_dir, 'clips')
+    os.makedirs(temp_clip_dir, exist_ok=True)
+
+    # 0. inference vector(sequence) to rs chunk
+    target_clipping_time = get_rs_time_chunk(event_sequence, video_fps, inference_interval)
 
 
+    print('\n\n \t\t <<<<< EXTRACTING CLIPS >>>>> \t\t \n\n')
+    # 1. clip video from rs chunk
+    for i, (start_time, duration) in enumerate(target_clipping_time, 1):
+        print('\n\n[{}] \t {} - {}'.format(i, start_time, duration))
+        extract_video_clip(video_path, temp_clip_dir, start_time, duration)
+
+    # 2. merge video
+    print('\n\n \t\t <<<<< MERGEING CLIPS >>>>> \t\t \n\n')
+    clips_to_video(clips_root_dir = temp_clip_dir, merge_path = editted_video_path)
+
+    # 3. TODO: delete temp process path (delete clips)
 
 
 def video_copy_to_save_dir(target_video, output_path):
@@ -257,6 +359,7 @@ def main():
 
 
     import os
+    import glob
 
     for (root, dirs, files) in os.walk(input_path):
 
@@ -277,7 +380,10 @@ def main():
             if check_exist_dupli_video(target_video, output_base_path): # True: 중복된 비디오 있음. False : 중복된 비디오 없음.
                 print('[DO NOT RUN] ALREADY EXITST IN OUTPUT PATH {}'.format(os.path.join(root, file)))
                 continue
-
+            
+            # 0. get video meta info
+            frameRate, totalFrame, width, height = get_video_meta_info_from_ffmpeg(target_video) # from ffmpeg
+            video_name = os.path.splitext(os.path.basename(target_video))[0]
 
             # 1. 비디오 복사 (만약 input path 와 output path 가 동일하면, 해당 과정 생략)
             if input_path != output_base_path:
@@ -292,14 +398,23 @@ def main():
             frame_save_path = frame_cutting(target_video, frame_save_path = os.path.join(output_path, 'frames')) # 22.01.07 hg modify, output_path에 처리되도록 변경 및 processed dir 반환
 
             ## 3. inference (비디오 단위) -> 저장 디렉토리 & result csv 생성 
-            # 22.01.07 hg modify, target_video -> frame_save_path, inference_interval 추가
+            # 22.01.07 hg modify, target_video -> frame_save_path로 변경, inference_interval 추가
             predict_csv_path = inference(target_dir = frame_save_path, inference_interval = inference_interval, result_save_path = os.path.join(output_path, 'results'), model_path = model_path) # model_path 는 args 로 받아도 될 듯.
-            
+
+            # prepare 1. csv to sequence vector
+            event_sequence = get_event_sequence_from_csv(predict_csv_path)
+
+            # prepare 2. check unmatching total frame
+            frame_cnt = len(glob.glob(os.path.join(frame_save_path, '*.jpg')))
+            if frame_cnt < totalFrame:
+                print('>>>>> UNMATCH FRAME CNT <<<<< \t extrated frame_cnt : {} \t < \t totalFrame by ffmpeg : {} '.format(frame_cnt, totalFrame))  # TODO - logging
+                totalFrame = frame_cnt            
+
             ## 4. 22.01.07 hg new add, save annotation by inference (hvat form)
-            report_annotation(predict_csv_path, result_save_path = os.path.join(output_path, 'results'))
+            report_annotation(frameRate, totalFrame, width, height, video_name, event_sequence, inference_interval, os.path.join(output_path, 'results', '{}-annotation_by_inference.json'.format(video_name)))
 
             ## 5. 비디오 편집 (ffmpep script)
-            video_editing(predict_csv_path, result_save_path = os.path.join(output_path, 'results'))
+            video_editing(target_video, event_sequence, os.path.join(output_path, 'results', '{}-edit.mp4'.format(video_name)), inference_interval, frameRate)
             
             ## 6. meta_log 파일 생성 & 임시 디렉토리 삭제
             save_meta_log(target_video, output_base_path)
