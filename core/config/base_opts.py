@@ -312,7 +312,7 @@ def parse_opts():
     parser.add_argument('--save_top_n', type=int, default=1, help='dataset random seed')
     
     parser.add_argument('--inference_interval', type=int, 
-                        default=30,
+                        default=300,
                         help='Inference Interval of frame')
 
     parser.add_argument('--inference_fold',

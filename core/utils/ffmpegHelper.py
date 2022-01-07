@@ -20,7 +20,8 @@ class ffmpegHelper():
     
     def _process_cmd(self, process, **args):
         process_cmd = {
-            'cut_frame_total': ['ffmpeg', '-i', self.video_path, '-start_number', '0', '-vsync', '0', '-vf', 'scale=512:512', self.results_dir + '/frame-%010d.jpg'], ## vsync 0 으로 두었을 때, 끝까지 안 잘리는 경우가 있었는데, 고민이네요..
+            # 'cut_frame_total': ['ffmpeg', '-i', self.video_path, '-start_number', '0', '-vsync', '0', '-vf', 'scale=512:512', self.results_dir + '/frame-%010d.jpg'], ## vsync 0 으로 두었을 때, 끝까지 안 잘리는 경우가 있었는데, 고민이네요..
+            'cut_frame_total': ['ffmpeg', '-i', self.video_path, '-start_number', '0', '-vf', 'scale=512:512', self.results_dir + '/frame-%010d.jpg'], ## vsync 0 으로 두었을 때, 끝까지 안 잘리는 경우가 있었는데, 고민이네요..
             'cut_frame_1fps': ['ffmpeg', '-i', self.video_path, '-s', '224x224', '-vf', 'fps=1', self.results_dir + '/frame-%010d.jpg'],
             'extract_frame_by_index': ['ffmpeg', '-i', self.video_path, '-vf', '"select=eq(n\,{})"'.format(args.get('frame_index', -100)), '-vframes', '1', self.results_dir + '/extracted_frame-{}.jpg'.format(args.get('frame_index', -100))], # https://superuser.com/questions/1009969/how-to-extract-a-frame-out-of-a-video-using-ffmpeg
             'extract_frame_by_time': ['ffmpeg', '-i', self.video_path, '-ss', '{}'.format(args.get('time', -100)), '-frames:v', '1', self.results_dir + '/extracted_frame-{}.jpg'.format(args.get('time', -100))],
