@@ -71,8 +71,8 @@ def save_meta_log(target_video, output_base_path):
 
 
 
-
-def frame_cutting(target_video):
+# 22.01.07 hg modify, 기존 target_video 내부에 생성 => 설정된 frame_save_path 생성되도록 변경
+def frame_cutting(target_video, frame_save_path):
     import sys
     import os    
 
@@ -85,12 +85,13 @@ def frame_cutting(target_video):
     from core.utils.ffmpegHelper import ffmpegHelper
 
     # save_path 
-    frame_save_path = os.path.join(extract_target_video_path(target_video), 'frames')
     os.makedirs(frame_save_path, exist_ok=True)
 
-    # frame cutting -> save to '/data3/DATA/IMPORT/211220/12_14/gangbuksamsung_127case/L_1/04_GS4_99_L_1_01/frames/frame-000000000.jpg'
+    # frame cutting -> save to '$ frame_save_path~/frame-000000000.jpg'
     ffmpeg_helper = ffmpegHelper(target_video, frame_save_path)
     ffmpeg_helper.cut_frame_total()
+
+    return frame_save_path
 
 
 def get_experiment_args():
@@ -120,7 +121,8 @@ def get_experiment_args():
     return args
 
 
-def inference(target_video, output_path, model_path = '/NRS_EDITING/logs_sota/mobilenetv3_large_100-general-rs/version_1/checkpoints/epoch=19-Mean_metric=0.9903-best.ckpt'):
+# 22.01.17 hg modify, InfernceDB독립사용을 위해 target_video 변수를 target_dir로 변경하고 infernce_interval parameter를 추가하였습니다.
+def inference(target_dir, inference_interval, result_save_path, model_path):
     '''
     inference
     result_save_path : /data3/DATA/IMPORT/211220/12_14/gangbuksamsung_127case/L_1/04_GS4_99_L_1_01/results/04_GS4_99_L_1_01.json
@@ -142,28 +144,20 @@ def inference(target_video, output_path, model_path = '/NRS_EDITING/logs_sota/mo
     ### test inference module
     from core.api.trainer import CAMIO
     from core.api.inference import InferenceDB # inference module
-    from core.api.evaluation import Evaluator # evaluation module
-    from core.utils.metric import MetricHelper # metric helper (for calc CR, OR, mCR, mOR)
-    from core.utils.logger import Report # report helper (for experiments reuslts and inference results)
-
-    from core.api.visualization import VisualTool # visual module
+    # 22.01.17 hg modify, 해당 inference 함수 사용시 사용하지 않는 module import문을 제거하였습니다.
 
     print('\ninferencing ...')
 
-
-    target_frame_path = os.path.join(extract_target_video_path(target_video), 'frames')
-    result_save_path = os.path.join(output_path, 'results') 
     os.makedirs(result_save_path, exist_ok=True)
 
+    # 22.01.17 hg comment, args는 model 불러올떄만 사용하고, InferencDB사용시에 args 사용을 제거하였습니다.
     args = get_experiment_args()
 
     model = CAMIO.load_from_checkpoint(model_path, args=args) # ckpt
     model = model.cuda()
 
-    db_path = target_frame_path
-
     # Inference module
-    inference = InferenceDB(model, db_path, args.inference_interval) # Inference object
+    inference = InferenceDB(model, target_dir, inference_interval) # 22.01.17 hg modify, InferenceDB 사용시 기존 args.inference_interval 에서 function param으로 변경하였습니다.
     predict_list, target_img_list, target_frame_idx_list = inference.start() # call start
 
     # print(predict_list)
@@ -185,19 +179,127 @@ def inference(target_video, output_path, model_path = '/NRS_EDITING/logs_sota/mo
     return predict_csv_path
 
 
-def video_editing(predict_csv_path, output_path):
-    import os
+def get_event_sequence_from_csv(predict_csv_path):
+    import pandas as pd
 
-    # TODO NRS video editing
-    # 1. csv_path 입력하여 -> json 생성 (저장 경로 : result_save_path)
-    # 2. input 비디오 & results 폴더 복사 (만약 input path, output path 가 동일하면 해당 과정 생략)
-    # 3. json 기반 편집 (편집된 결과 저장 경로: )
+    return pd.read_csv(predict_csv_path)['predict'].values.tolist()
+
+
+def get_video_meta_info_from_ffmpeg(video_path):
+    from core.utils.ffmpegHelper import ffmpegHelper
+
+    print('\n\n \t\t <<<<< GET META INFO FROM FFMPEG >>>>> \t\t \n\n')
+
+    ffmpeg_helper = ffmpegHelper(video_path)
+    fps = ffmpeg_helper.get_video_fps()
+    video_len = ffmpeg_helper.get_video_length()
+    width, height = ffmpeg_helper.get_video_resolution()
+
+    return fps, video_len, width, height
+
+def extract_video_clip(video_path, results_dir, start_time, duration):
+    from core.utils.ffmpegHelper import ffmpegHelper
+
+    ffmpeg_helper = ffmpegHelper(video_path, results_dir)
+    ffmpeg_helper.extract_video_clip(start_time, duration)
+
+
+def parse_clips_paths(clips_root_dir):
+    import os
+    import glob
+    from natsort import natsort
+
+    target_clip_paths = glob.glob(os.path.join(clips_root_dir, 'clip-*.mp4'))
+    target_clip_paths = natsort.natsorted(target_clip_paths)
+
+    save_path = os.path.join(clips_root_dir, 'clips.txt')
+
+    logging = ''
+
+    for clip_path in target_clip_paths:
+        txt = 'file \'{}\''.format(os.path.abspath(clip_path))
+        logging += txt + '\n'
+    
+    print(logging)
+
+    # save txt
+    with open(save_path, 'w') as f :
+        f.write(logging)
+
+    return save_path
+
+
+def clips_to_video(clips_root_dir, merge_path):
+    from core.utils.ffmpegHelper import ffmpegHelper
+
+    # parsing clip video list 
+    input_txt_path = parse_clips_paths(clips_root_dir)
+
+    ffmpeg_helper = ffmpegHelper("dummy", "dummy")
+    ffmpeg_helper.merge_video_clip(input_txt_path, merge_path)
+
+
+## 4. 22.01.07 hg new add, save annotation by inference (hvat form)
+def report_annotation(frameRate, totalFrame, width, height, name, event_sequence, inference_interval, result_save_path):
+    from core.utils.report import ReportAnnotation
+    from core.utils.misc import get_nrs_frame_chunk, get_current_time
+    
+    ### static meta data ###
+    createdAt = get_current_time()[0]
+    updatedAt = createdAt
+    _id = "61efa"
+    annotationType = "NRS"
+    annotator = "30"
+    label = {"1": "NonRelevantSurgery"}
+    ### ### ### ### ### ###
+
+    nrs_frame_chunk = get_nrs_frame_chunk(event_sequence, inference_interval)
+
+    annotation_report = ReportAnnotation(result_save_path) # load Report module
+
+    # set meta info
+    annotation_report.set_total_report(totalFrame, frameRate, width, height, _id, annotationType, createdAt, updatedAt, annotator, name, label)
+    
+    # add nrs annotation info
+    nrs_cnt = len(nrs_frame_chunk)
+    for i, (start_frame, end_frame) in enumerate(nrs_frame_chunk, 1):
+        # print('\n\n[{}] \t {} - {}'.format(i, start_frame, end_frame))
+
+        # check over totalFrame on last annotation (because of quntization? when set up inference_interval > 1)
+        if nrs_cnt == i and end_frame >= totalFrame: 
+            end_frame = totalFrame - 1
+
+        annotation_report.add_annotation_report(start_frame, end_frame, code=1)
+
+    annotation_report.save_report()
+
+## 5. 22.01.07 hg write, inference_interval, video_fps는 clips의 extration time 계산시 필요
+def video_editing(video_path, event_sequence, editted_video_path, inference_interval, video_fps):
+    import os
+    from core.utils.misc import get_rs_time_chunk
 
     print('\nvideo editing ...')
-    print(predict_csv_path)
-    print(os.path.join(output_path, 'results'))
+
+    # temp process path
+    temp_process_dir = os.path.dirname(editted_video_path) # clips, 편한곳에 생성~(현재는 edit되는 비디오 밑에 ./clips에서 작업)
+    temp_clip_dir = os.path.join(temp_process_dir, 'clips')
+    os.makedirs(temp_clip_dir, exist_ok=True)
+
+    # 0. inference vector(sequence) to rs chunk
+    target_clipping_time = get_rs_time_chunk(event_sequence, video_fps, inference_interval)
 
 
+    print('\n\n \t\t <<<<< EXTRACTING CLIPS >>>>> \t\t \n\n')
+    # 1. clip video from rs chunk
+    for i, (start_time, duration) in enumerate(target_clipping_time, 1):
+        print('\n\n[{}] \t {} - {}'.format(i, start_time, duration))
+        extract_video_clip(video_path, temp_clip_dir, start_time, duration)
+
+    # 2. merge video
+    print('\n\n \t\t <<<<< MERGEING CLIPS >>>>> \t\t \n\n')
+    clips_to_video(clips_root_dir = temp_clip_dir, merge_path = editted_video_path)
+
+    # 3. TODO: delete temp process path (delete clips)
 
 
 def video_copy_to_save_dir(target_video, output_path):
@@ -250,10 +352,14 @@ def main():
     input_path = '/data3/DATA/IMPORT/211220/12_14/gangbuksamsung_127case'
     output_base_path = '/raid/save_output'
 
+     # 22.01.07 hg comment, 우선 모델 불어올때만 args가 이용되고, 나머지는 최대한 args에 의존되지 않도록 처리하기 위해 변수화 시켰습니다.
+     # 추후 args로 받아올 경우 해당 변수를 args. 로 초기화
+    inference_interval = 30
+    model_path = '/NRS_EDITING/logs_sota/mobilenetv3_large_100-general-rs/version_1/checkpoints/epoch=19-Mean_metric=0.9903-best.ckpt'
+
+
     import os
-    from core.utils.misc import save_dict_to_csv, prepare_inference_aseets, get_inference_model_path, \
-    set_args_per_stage, check_hem_online_mode, clean_paging_chache
-    
+    import glob
 
     for (root, dirs, files) in os.walk(input_path):
 
@@ -268,13 +374,16 @@ def main():
             os.makedirs(output_path, exist_ok=True)
             print('*[output path] {}\n'.format(output_path))
             
-            if file.split('.')[-1] not in ['mp4', 'mpg']: # extention 예외 처리 ['mp4', 'mpg']
+            if file.split('.')[-1] not in ['mp4']: # extention 예외 처리 ['mp4'] # 22.01.07 hg comment, sanity한 ffmpeg module 사용을 위해 우선 .mp4 만 사용하는 것이 좋을 것 같습니다.
                 continue
 
             if check_exist_dupli_video(target_video, output_base_path): # True: 중복된 비디오 있음. False : 중복된 비디오 없음.
                 print('[DO NOT RUN] ALREADY EXITST IN OUTPUT PATH {}'.format(os.path.join(root, file)))
                 continue
-
+            
+            # 0. get video meta info
+            frameRate, totalFrame, width, height = get_video_meta_info_from_ffmpeg(target_video) # from ffmpeg
+            video_name = os.path.splitext(os.path.basename(target_video))[0]
 
             # 1. 비디오 복사 (만약 input path 와 output path 가 동일하면, 해당 과정 생략)
             if input_path != output_base_path:
@@ -282,16 +391,32 @@ def main():
             else:
                 print("\nINPUT PATH and OUTPUT PATH are same. No duplicating : {}\n".format(input_path))
 
-            ## 2. 비디오 전처리 (frmae 추출) -> 임시 디렉토리
-            # frame_cutting(target_video)
-
-            ## 3. inference (비디오 단위) -> 저장 디렉토리 & result csv 생성
-            predict_csv_path = inference(target_video, output_path) # model_path 는 args 로 받아도 될 듯.
-
-            ## 4. 비디오 편집 (ffmpep script)
-            video_editing(predict_csv_path, output_path)
             
-            ## 5. meta_log 파일 생성 & 임시 디렉토리 삭제
+            # 22.01.07 hg comment, 각 사용함수 내부에 결과가 저장되는 dir이 따로따로 조합되어 결과 저장경로를 하위까지 조합하여 parameter로 넘겨주었습니다. (~/frames, ~/results)
+            
+            ## 2. 비디오 전처리 (frmae 추출) -> 임시 디렉토리
+            frame_save_path = frame_cutting(target_video, frame_save_path = os.path.join(output_path, 'frames')) # 22.01.07 hg modify, output_path에 처리되도록 변경 및 processed dir 반환
+
+            ## 3. inference (비디오 단위) -> 저장 디렉토리 & result csv 생성 
+            # 22.01.07 hg modify, target_video -> frame_save_path로 변경, inference_interval 추가
+            predict_csv_path = inference(target_dir = frame_save_path, inference_interval = inference_interval, result_save_path = os.path.join(output_path, 'results'), model_path = model_path) # model_path 는 args 로 받아도 될 듯.
+
+            # prepare 1. csv to sequence vector
+            event_sequence = get_event_sequence_from_csv(predict_csv_path)
+
+            # prepare 2. check unmatching total frame
+            frame_cnt = len(glob.glob(os.path.join(frame_save_path, '*.jpg')))
+            if frame_cnt < totalFrame:
+                print('>>>>> UNMATCH FRAME CNT <<<<< \t extrated frame_cnt : {} \t < \t totalFrame by ffmpeg : {} '.format(frame_cnt, totalFrame))  # TODO - logging
+                totalFrame = frame_cnt            
+
+            ## 4. 22.01.07 hg new add, save annotation by inference (hvat form)
+            report_annotation(frameRate, totalFrame, width, height, video_name, event_sequence, inference_interval, os.path.join(output_path, 'results', '{}-annotation_by_inference.json'.format(video_name)))
+
+            ## 5. 비디오 편집 (ffmpep script)
+            video_editing(target_video, event_sequence, os.path.join(output_path, 'results', '{}-edit.mp4'.format(video_name)), inference_interval, frameRate)
+            
+            ## 6. meta_log 파일 생성 & 임시 디렉토리 삭제
             save_meta_log(target_video, output_base_path)
 
             exit(0)

@@ -1,2 +1,9 @@
 /model_ckpt
 /logs_sota
+# logs 
+/logs*
+
+# python
+__pycache__/
+*.py[cod]
+*$py.class

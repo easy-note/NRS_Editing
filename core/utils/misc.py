@@ -1,35 +1,90 @@
-import os
-import pandas as pd
+import time
+import datetime
+from itertools import groupby
+
+def encode_list(s_list): # run-length encoding from list
+        return [[len(list(group)), key] for key, group in groupby(s_list)] # [[length, value], [length, value]...]
+
+def decode_list(run_length): # run_length -> [0,1,1,1,1,0 ...]
+        decode_list = []
+
+        for length, group in run_length : 
+            decode_list += [group] * length
+
+        return decode_list
+
+def idx_to_time(idx, fps) :
+        time_s = idx // fps
+        frame = int(idx % fps)
+
+        converted_time = str(datetime.timedelta(seconds=time_s))
+        converted_time = converted_time + '.' + str(frame)
+
+        return converted_time
 
 
-def save_OOB_result_csv(metric, epoch, args, save_path):
-    m_keys = list(metric.keys())
-
-    cols = ['Model', 'Epoch', *m_keys]
-
-    save_path = save_path + '/result.csv'
-    model_name = args.model
+def get_current_time():
+    startTime = time.time()
+    s_tm = time.localtime(startTime)
     
-    data = [model_name, epoch, *list(metric[key] for key in m_keys)]
+    return time.strftime('%Y-%m-%d-%H:%M:%S', s_tm), time.strftime('%Y-%m-%d %I:%M:%S %p', s_tm)
 
-    if os.path.exists(save_path):
-        df = pd.read_csv(save_path)
-        print('Existed file loaded')
+
+def get_rs_time_chunk(event_sequence, video_fps, inference_interval):
+
+    RS_CLASS, NRS_CLASS = (0,1)
+    rs_chunk = []
+
+    # event_sequence = [0,0,1,0,1,0,0,1,1,1,1,1,0,0]
+    encoded_list = encode_list(event_sequence)
+     # [[2, 0], [1, 1], [1, 0], [1, 1], [2, 0], [5, 1], [2, 0]] // total:14
+     
+    sequence_idx = 0
+    
+    for sequence_cnt, label in encoded_list:
         
-        new_df = pd.Series(data, index=cols)
-        df = df.append(new_df, ignore_index=True)
-        print('New line added')
+        if label == RS_CLASS:
+            start_time = idx_to_time((sequence_idx * inference_interval), video_fps)
+            duration_time = idx_to_time((sequence_cnt * inference_interval), video_fps)
+            rs_chunk.append([start_time, duration_time])
+
+        sequence_idx += sequence_cnt # start frame idx
+    
+    if rs_chunk: # event
+        pass
+        # print(rs_chunk)
+        # TO-DO check video last?
+        # last_start_time, last_duration_time = rs_chunk[-1]
+
+    return rs_chunk
+
+def get_nrs_frame_chunk(event_sequence, inference_interval):
+
+    RS_CLASS, NRS_CLASS = (0,1)
+    nrs_chunk = []
+
+    # event_sequence = [0,0,1,0,1,0,0,1,1,1,1,1,0,0]
+    encoded_list = encode_list(event_sequence)
+     # [[2, 0], [1, 1], [1, 0], [1, 1], [2, 0], [5, 1], [2, 0]] // total:14
+     
+    sequence_idx = 0
+    
+    for sequence_cnt, label in encoded_list:
         
-    else:
-        print('New file generated!')
-        df = pd.DataFrame([data],
-                    columns=cols
-                    ) 
+        if label == NRS_CLASS:
+            start_frame = sequence_idx * inference_interval
+            duration_frame = sequence_cnt * inference_interval
+            end_frame = (start_frame + duration_frame) - 1
+            nrs_chunk.append([start_frame, end_frame])
 
-    df.to_csv(save_path, 
-            index=False,
-            float_format='%.4f')
+        sequence_idx += sequence_cnt # start frame idx
+    
+    if nrs_chunk: # event
+        pass
+        # print(nrs_chunk)
+        # TO-DO check video last?
 
+    return nrs_chunk
 
 # inference_flow.py에서 가져옴
 def clean_paging_chache():
@@ -39,103 +94,3 @@ def clean_paging_chache():
     print('\n\n\t ====> CLEAN PAGINGCACHE, DENTRIES, INODES "echo 1 > /writable_proc/sys/vm/drop_caches"\n\n')
     subprocess.run('sync', shell=True)
     subprocess.run('echo 1 > /writable_proc/sys/vm/drop_caches', shell=True) ### For use this Command you should make writable proc file when you run docker
-
-def set_args_per_stage(args, ids, stage):
-    args.stage = stage
-
-    if ids > 3:
-        args.mini_fold = 'general'        
-        args.max_epoch = 100
-    else:
-        args.mini_fold = str(ids)
-
-    return args
-
-def check_hem_online_mode(args):
-    if 'online' in args.hem_extract_mode.lower():
-        return True
-    else:
-        return False 
-
-def get_inference_model_path(restore_path):
-    # from finetuning model
-    import glob
-    import os
-    
-    ckpoint_path = os.path.join(restore_path, '*.ckpt')
-    # ckpoint_path = os.path.join(restore_path, 'checkpoints/*.ckpt')
-    
-    ckpts = glob.glob(ckpoint_path)
-
-    for f_name in ckpts :
-        if f_name.find('best') != -1 :
-            model_path = f_name
-        '''
-        if f_name.find('last') != -1 :
-            model_path = f_name
-        '''
-    return model_path
-
-def get_pt_path(restore_path):
-    import glob
-    import os
-    
-    model_path = None
-    pt_dir = os.path.join(restore_path, '*.pt')
-    pts = glob.glob(pt_dir)
-
-    model_path = pts[-1] # load last pt
-
-    return model_path
-        
-
-def prepare_inference_aseets(case, anno_ver, inference_fold, save_path):
-    from core.utils.prepare import InferenceAssets # inference assets helper (for prepare inference assets)
-    from core.utils.prepare import OOBAssets # OOB assets helper (for prepare inference assets)
-    from core.utils.parser import FileLoader # file load helper
-    
-    # OOBAssets
-    # assets_sheet_dir = os.path.join(save_path, 'assets')
-    # oob_assets = OOBAssets(assets_sheet_dir)
-    # oob_assets.save_assets_sheet() # you can save assets sheet
-    # video_sheet, annotation_sheet, img_db_sheet = oob_assets.get_assets_sheet() # you can only use assets although not saving
-    # video_sheet, annotation_sheet, img_db_sheet = oob_assets.load_assets_sheet(assets_sheet_dir) # you can also load saved aseets
-
-    # InferenceAssets
-    inference_assets_save_path = os.path.join(save_path, 'patients_aseets.yaml')
-    inference_assets_helper = InferenceAssets(case=case, anno_ver=anno_ver, fold=inference_fold)
-    inference_assets = inference_assets_helper.get_inference_assets() # dict (yaml)
-
-    # save InferenceAssets: serialization from python object(dict) to YAML stream and save
-    os.makedirs(save_path, exist_ok=True)
-    inference_assets_helper.save_dict_to_yaml(inference_assets, inference_assets_save_path)
-    
-    # load InferenceAssets: load saved inference assets yaml file // you can also load saved patients
-    f_loader = FileLoader()
-    f_loader.set_file_path(inference_assets_save_path)
-    inference_assets = f_loader.load()
-
-    return inference_assets
-
-def save_dict_to_csv(results_dict, save_path):
-    import pandas as pd
-    from core.utils.parser import FileLoader # file load helper
-
-    results_df = pd.DataFrame.from_dict([results_dict]) # dict to df
-    results_df = results_df.reset_index(drop=True)
-
-    merged_df = results_df
-    if os.path.isfile(save_path): # append
-        f_loader = FileLoader()
-        f_loader.set_file_path(save_path)
-        saved_df = f_loader.load()
-
-        saved_df.drop(['Unnamed: 0'], axis = 1, inplace = True) # to remove Unmaned : 0 colume
-
-        merged_df = pd.concat([saved_df, results_df], ignore_index=True, sort=False)
-        
-        merged_df.to_csv(save_path, mode='w')
-
-        print(merged_df)
-
-    merged_df.to_csv(save_path, mode='w')
