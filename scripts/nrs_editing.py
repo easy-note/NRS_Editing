@@ -344,18 +344,52 @@ def check_exist_dupli_video(target_video, output_path):
             return True
 
     return False
-        
+
+# predict csv to applied-pp predict csv
+def apply_post_processing(predict_csv_path, seq_fps):
+    import os
+    import pandas as pd
+    from core.api.post_process import FilterBank
+    
+    # 1. load predict df
+    predict_df = pd.read_csv(predict_csv_path, index_col=0)
+    event_sequence = predict_df['predict'].tolist()
+
+    # 2. apply pp sequence
+    #### use case 1. best filter
+    fb = FilterBank(event_sequence, seq_fps)
+    best_pp_seq_list = fb.apply_best_filter()
+
+    #### use case 2. custimize filter
+    '''
+    best_pp_seq_list = fb.apply_filter(event_sequence, "opening", kernel_size=3)
+    best_pp_seq_list = fb.apply_filter(best_pp_seq_list, "closing", kernel_size=3)
+    '''
+
+    predict_df['predict'] = best_pp_seq_list
+
+    # 3. save pp df
+    d_, f_ = os.path.split(predict_csv_path)
+    f_name, _ = os.path.splitext(f_)
+
+    results_path = os.path.join(d_, '{}-pp.csv'.format(f_name)) # renaming file of pp
+    predict_df.to_csv(results_path)
+
+    return results_path
     
 def main():
     ## 1. input 비디오 목록 읽기
         ## 1-1. 중복 확인 (저장 디렉토리에 결과 존재하는지 확인: 비디오 파일 명 + 알파)
-    input_path = '/data3/DATA/IMPORT/211220/12_14/gangbuksamsung_127case'
-    output_base_path = '/raid/save_output'
+    # input_path = '/data3/DATA/IMPORT/211220/12_14/gangbuksamsung_127case'
+    # output_base_path = '/raid/save_output'
+    input_path = '/data3/DATA/IMPORT/211220/12_14/TEST_24case'
+    output_base_path = '/data3/Public/save_output2'
 
      # 22.01.07 hg comment, 우선 모델 불어올때만 args가 이용되고, 나머지는 최대한 args에 의존되지 않도록 처리하기 위해 변수화 시켰습니다.
      # 추후 args로 받아올 경우 해당 변수를 args. 로 초기화
-    inference_interval = 30
-    model_path = '/NRS_EDITING/logs_sota/mobilenetv3_large_100-general-rs/version_1/checkpoints/epoch=19-Mean_metric=0.9903-best.ckpt'
+    seq_fps = 1 # pp module (1 fps 로 inference) - pp에서 사용 (variable이 고정되어 30 fps인 비디오만 사용하는 시나이오로 적용, 비디오에 따라 유동적으로 var이 변하도록 계산하는게 필요해보임)
+    inference_interval = 30 # frame inference interval - 전체사용 (variable이 고정되어 30 fps인 비디오를 1fps로 Infeence 하는 시나리오로 적용, 비디오에 따라 유동적으로 var이 변하도록 계산하는게 필요해보임)
+    model_path = '/NRS_EDITING/logs_sota/mobilenetv3_large_100-theator_stage100-offline-sota/version_4/checkpoints/epoch=60-Mean_metric=0.9875-best.ckpt'
 
 
     import os
@@ -374,7 +408,7 @@ def main():
             os.makedirs(output_path, exist_ok=True)
             print('*[output path] {}\n'.format(output_path))
             
-            if file.split('.')[-1] not in ['mp4']: # extention 예외 처리 ['mp4'] # 22.01.07 hg comment, sanity한 ffmpeg module 사용을 위해 우선 .mp4 만 사용하는 것이 좋을 것 같습니다.
+            if file.split('.')[-1].lower() not in ['mp4', 'mpg']: # extention 예외 처리 ['mp4'] # 22.01.07 hg comment, sanity한 ffmpeg module 사용을 위해 우선 .mp4 만 사용하는 것이 좋을 것 같습니다.
                 continue
 
             if check_exist_dupli_video(target_video, output_base_path): # True: 중복된 비디오 있음. False : 중복된 비디오 없음.
@@ -391,11 +425,11 @@ def main():
             else:
                 print("\nINPUT PATH and OUTPUT PATH are same. No duplicating : {}\n".format(input_path))
 
-            
             # 22.01.07 hg comment, 각 사용함수 내부에 결과가 저장되는 dir이 따로따로 조합되어 결과 저장경로를 하위까지 조합하여 parameter로 넘겨주었습니다. (~/frames, ~/results)
             
             ## 2. 비디오 전처리 (frmae 추출) -> 임시 디렉토리
             frame_save_path = frame_cutting(target_video, frame_save_path = os.path.join(output_path, 'frames')) # 22.01.07 hg modify, output_path에 처리되도록 변경 및 processed dir 반환
+            frame_save_path = os.path.join(output_path, 'frames')
 
             ## 3. inference (비디오 단위) -> 저장 디렉토리 & result csv 생성 
             # 22.01.07 hg modify, target_video -> frame_save_path로 변경, inference_interval 추가
@@ -404,11 +438,15 @@ def main():
             # prepare 1. csv to sequence vector
             event_sequence = get_event_sequence_from_csv(predict_csv_path)
 
-            # prepare 2. check unmatching total frame
+            # prepare 2. apply PP module
+            predict_csv_path = apply_post_processing(predict_csv_path, seq_fps) # csv vector to applid pp csv vector
+            event_sequence = get_event_sequence_from_csv(predict_csv_path) # reload - applied pp csv vector
+
+            # prepare 3. check unmatching total frame
             frame_cnt = len(glob.glob(os.path.join(frame_save_path, '*.jpg')))
             if frame_cnt < totalFrame:
                 print('>>>>> UNMATCH FRAME CNT <<<<< \t extrated frame_cnt : {} \t < \t totalFrame by ffmpeg : {} '.format(frame_cnt, totalFrame))  # TODO - logging
-                totalFrame = frame_cnt            
+                totalFrame = frame_cnt           
 
             ## 4. 22.01.07 hg new add, save annotation by inference (hvat form)
             report_annotation(frameRate, totalFrame, width, height, video_name, event_sequence, inference_interval, os.path.join(output_path, 'results', '{}-annotation_by_inference.json'.format(video_name)))
@@ -419,7 +457,6 @@ def main():
             ## 6. meta_log 파일 생성 & 임시 디렉토리 삭제
             save_meta_log(target_video, output_base_path)
 
-            exit(0)
 
 
 if __name__ == '__main__':
