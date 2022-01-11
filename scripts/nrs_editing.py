@@ -2,42 +2,39 @@
 def extract_target_video_path(target_video_path):
     import os
     '''
-    target_video_path = /data3/Public/ViHUB-pro/input_video/train_100/R_2/01_G_01_R_2_ch1_01.mp4
-    base_path = /data3/Public/ViHUB-pro/input_video/train_100/R_2/01_G_01_R_2_ch1_01.mp4
-    target_path = /data3/DATA/IMPORT/211220/12_14/gangbuksamsung_127case/L_1/04_GS4_99_L_1_01
+    target_video_path = '/data3/Public/ViHUB-pro/input_video/train_100/R_2/01_G_01_R_2_ch1_01.mp4'
+    core_output_path = 'train_100/R_2/01_G_01_R_2_ch1_01'
     '''
+
     split_path_list = target_video_path.split('/')
     edited_path_list = []
-    print(split_path_list)
-    for split_path in split_path_list:
-        print(split_path)
+
+    for i, split_path in enumerate(split_path_list):
         if split_path == 'input_video':
+            edited_path_list = split_path_list[i+1:]
+
+    core_output_path = '/'.join(edited_path_list)
+    core_output_path = core_output_path.split('.')[0]
+
+    return core_output_path
 
 
-    print(split_path_list)
-    exit(0)
-    base_path = '/'.join(target_video_path.split('/')[:-1])
-    print(base_path)
-    target_path = os.path.join(base_path, target_video_path.split('/')[-1].split('.')[0]) # 마지막 비디오 명에 '.' 이 들어가 있으면 에러 -> naming rule 지켜져야 함. 
-
-    return target_path
-
-
-def get_video_meta_info(target_video):
+def get_video_meta_info(target_video, base_output_path):
     import os
     import glob
     import datetime
 
+    inference_json_output_path = os.path.join(base_output_path, 'inference_json', extract_target_video_path(target_video))
+
     video_name = target_video.split('/')[-1]
-    video_path = target_video
-    frame_list = glob.glob(os.path.join(extract_target_video_path(target_video), 'frames', '*.jpg'))
-    print(os.path.join(extract_target_video_path(target_video), 'frame', '*.jpg'))
+    video_path = target_video    
+    frame_list = glob.glob(os.path.join(inference_json_output_path, 'frames', '*.jpg'))
     date_time = str(datetime.datetime.now())
 
     return video_name, video_path, len(frame_list), date_time
 
 
-def save_meta_log(target_video, output_base_path):
+def save_meta_log(target_video, base_output_path):
     import json
     from collections import OrderedDict
 
@@ -52,11 +49,11 @@ def save_meta_log(target_video, output_base_path):
 
     print('\nmeta log saving ...')
 
-    meta_log_path = os.path.join(output_base_path, 'logs')
+    meta_log_path = os.path.join(base_output_path, 'logs')
     os.makedirs(meta_log_path, exist_ok=True)
     
     meta_data = OrderedDict()
-    video_name, video_path, frame_cnt, date_time = get_video_meta_info(target_video)
+    video_name, video_path, frame_cnt, date_time = get_video_meta_info(target_video, base_output_path)
 
     meta_data[video_name] = {
         'video_path': video_path,
@@ -158,8 +155,6 @@ def inference(target_dir, inference_interval, result_save_path, model_path):
 
     print('\ninferencing ...')
 
-    os.makedirs(result_save_path, exist_ok=True)
-
     # 22.01.17 hg comment, args는 model 불러올떄만 사용하고, InferencDB사용시에 args 사용을 제거하였습니다.
     args = get_experiment_args()
 
@@ -175,7 +170,7 @@ def inference(target_dir, inference_interval, result_save_path, model_path):
     # print(target_frame_idx_list)
 
     # save predict list to csv
-    video_name = result_save_path.split('/')[-2]
+    video_name = result_save_path.split('/')[-1]
     
     predict_csv_path = os.path.join(result_save_path, '{}.csv'.format(video_name))
     predict_df = pd.DataFrame({
@@ -206,6 +201,7 @@ def get_video_meta_info_from_ffmpeg(video_path):
     width, height = ffmpeg_helper.get_video_resolution()
 
     return fps, video_len, width, height
+
 
 def extract_video_clip(video_path, results_dir, start_time, duration):
     from core.utils.ffmpegHelper import ffmpegHelper
@@ -257,9 +253,9 @@ def report_annotation(frameRate, totalFrame, width, height, name, event_sequence
     ### static meta data ###
     createdAt = get_current_time()[0]
     updatedAt = createdAt
-    _id = "61efa"
+    _id = "temp"
     annotationType = "NRS"
-    annotator = "30"
+    annotator = "temp"
     label = {"1": "NonRelevantSurgery"}
     ### ### ### ### ### ###
 
@@ -316,43 +312,24 @@ def video_copy_to_save_dir(target_video, output_path):
     import os
     import shutil
 
-    # inference_result = os.path.join(extract_target_video_path(input_path), 'results/')
-
-    # # move result.csv 
-    # print('\nMOVE {} \n==========> {}'.format(inference_result, save_output_path+inference_result))
-    # shutil.move(inference_result, save_output_path+inference_result)
-    
-    # os.makedirs('/'.join(str(output_path+target_video).split('/')[:-1]), exist_ok=True)
-
     print('\nVideo copying ...')
 
+    video_name = output_path.split('/')[-1]
+    video_ext = target_video.split('.')[-1]
+
+    video_name = video_name + '.' + video_ext
+
     # copy target_video
-    print('\nCOPY {} \n==========> {}\n'.format(target_video, os.path.join('/'.join(output_path.split('/')[:-1]), target_video.split('/')[-1])))
-    shutil.copy2(target_video, os.path.join('/'.join(output_path.split('/')[:-1]), target_video.split('/')[-1]))
+    print('COPY {} \n==========> {}\n'.format(target_video, os.path.join(output_path, video_name)))
+    shutil.copy2(target_video, os.path.join(output_path, video_name))
     
 
-
-def check_exist_dupli_video(target_video, output_path):
+def check_exist_dupli_video(target_video, inference_json_output_path, edited_video_output_path):
     import os
 
-    # save_output_path = '/raid/save_output'
-    len_save_output_path = len(output_path.split('/'))
-
-    existed_video_list = []
+    if os.path.exists(inference_json_output_path) and os.path.exists(edited_video_output_path):
+        return True
     
-    for (root, dirs, files) in os.walk(output_path):
-        for file in files:
-            # extention 예외 처리 ['mp4', 'mpg']
-            if file.split('.')[-1] not in ['mp4', 'mpg']:
-                continue
-
-            # '/data3/DATA/IMPORT/211220/12_14/gangbuksamsung_127case/L_1/04_GS4_99_L_1_01.mp4'
-            existed_video_list.append('/'+'/'.join(os.path.join(root, file).split('/')[len_save_output_path:]))
-
-    for exited_video in existed_video_list:
-        if target_video == exited_video:
-            return True
-
     return False
 
 # predict csv to applied-pp predict csv
@@ -386,22 +363,24 @@ def apply_post_processing(predict_csv_path, seq_fps):
     predict_df.to_csv(results_path)
 
     return results_path
-    
+
+
+def del_frames(del_dir_path):
+    import os
+    import shutil
+
+    if os.path.exists(del_dir_path):
+        shutil.rmtree(del_dir_path)
+
+
 def main():
     import os
     import glob
 
-    ## 1. input 비디오 목록 읽기
-        ## 1-1. 중복 확인 (저장 디렉토리에 결과 존재하는지 확인: 비디오 파일 명 + 알파)
     input_path = '/data3/Public/ViHUB-pro/input_video'
-    
     base_output_path = '/data3/Public/ViHUB-pro/results'
-    inference_json_output_path = os.path.join(base_output_path, 'inference_json') # '/data3/Public/ViHUB-pro/results/inference_json'
-    edited_video_output_path = os.path.join(base_output_path, 'edited_video') # '/data3/Public/ViHUB-pro/results/edited_video'
-
-
-     # 22.01.07 hg comment, 우선 모델 불어올때만 args가 이용되고, 나머지는 최대한 args에 의존되지 않도록 처리하기 위해 변수화 시켰습니다.
-     # 추후 args로 받아올 경우 해당 변수를 args. 로 초기화
+    
+    # 추후 args로 받아올 경우 해당 변수를 args. 로 초기화
     seq_fps = 1 # pp module (1 fps 로 inference) - pp에서 사용 (variable이 고정되어 30 fps인 비디오만 사용하는 시나이오로 적용, 비디오에 따라 유동적으로 var이 변하도록 계산하는게 필요해보임)
     inference_interval = 30 # frame inference interval - 전체사용 (variable이 고정되어 30 fps인 비디오를 1fps로 Infeence 하는 시나리오로 적용, 비디오에 따라 유동적으로 var이 변하도록 계산하는게 필요해보임)
     model_path = '/NRS_EDITING/logs_sota/mobilenetv3_large_100-theator_stage100-offline-sota/version_4/checkpoints/epoch=60-Mean_metric=0.9875-best.ckpt'
@@ -412,69 +391,67 @@ def main():
         for file in files:
             
             target_video = os.path.join(root, file)
+            core_output_path = extract_target_video_path(target_video) # 'train_100/R_2/01_G_01_R_2_ch1_01'
+            inference_json_output_path = os.path.join(base_output_path, 'inference_json', core_output_path) # '/data3/Public/ViHUB-pro/results + inference_json + train_100/R_2/01_G_01_R_2_ch1_01'
+            edited_video_output_path = os.path.join(base_output_path, 'edited_video', core_output_path) # '/data3/Public/ViHUB-pro/results + edited_video + train_100/R_2/01_G_01_R_2_ch1_01'
+
+            ## 중복 비디오 확인
+            if check_exist_dupli_video(target_video, inference_json_output_path=inference_json_output_path, edited_video_output_path=edited_video_output_path): # True: 중복된 비디오 있음. False : 중복된 비디오 없음.
+                print('[NOT RUN] ALREADY EXITST IN OUTPUT PATH {}'.format(os.path.join(root, file)))
+                continue
+
+            # extention 예외 처리 ['mp4'] 
+            if file.split('.')[-1] not in ['mp4']: # 22.01.07 hg comment, sanity한 ffmpeg module 사용을 위해 우선 .mp4 만 사용하는 것이 좋을 것 같습니다.
+                continue
+
+
+            #########################################################################################
+
             print('\n', '+++++++++'*10)
             print('*[target video] Processing in {}'.format(target_video))
+            print('*[output path 1] {}'.format(inference_json_output_path))
+            print('*[output path 2] {}\n'.format(edited_video_output_path))
 
-            extract_target_video_path(target_video)
-            exit(0)
+            os.makedirs(inference_json_output_path, exist_ok=True)
+            os.makedirs(edited_video_output_path, exist_ok=True)
 
-            # TODO result_save_path 결합 시, 에러 발생 가능성 존재. (output_path : '/raid/' 이런식으로 되어있다면 경로 오류)
-            output_path = output_base_path + extract_target_video_path(target_video) # /data3/Public/ViHUB-pro/results + train_100/R_2/01_G_01_R_2_ch1_01
+            ## get video meta info
+            frameRate, totalFrame, width, height = get_video_meta_info_from_ffmpeg(target_video) # from ffmpeg
+            video_name = os.path.splitext(os.path.basename(target_video))[0]
 
+            ## 비디오 복사
+            video_copy_to_save_dir(target_video=target_video, output_path=inference_json_output_path)
             
-            # os.makedirs(output_path, exist_ok=True)
-            # print('*[output path] {}\n'.format(output_path))
+            ## 비디오 전처리 (frmae 추출) -> 임시 디렉토리
+            frame_save_path = frame_cutting(target_video=target_video, frame_save_path = os.path.join(inference_json_output_path, 'frames')) 
             
-            # if file.split('.')[-1] not in ['mp4']: # extention 예외 처리 ['mp4'] # 22.01.07 hg comment, sanity한 ffmpeg module 사용을 위해 우선 .mp4 만 사용하는 것이 좋을 것 같습니다.
-            #     continue
+            ## inference (비디오 단위) -> 저장 디렉토리 & result csv 생성 
+            predict_csv_path = inference(target_dir = frame_save_path, inference_interval = inference_interval, result_save_path = inference_json_output_path, model_path = model_path) 
 
-            # if check_exist_dupli_video(target_video, output_base_path): # True: 중복된 비디오 있음. False : 중복된 비디오 없음.
-            #     print('[DO NOT RUN] ALREADY EXITST IN OUTPUT PATH {}'.format(os.path.join(root, file)))
-            #     continue
-            
-            # # 0. get video meta info
-            # frameRate, totalFrame, width, height = get_video_meta_info_from_ffmpeg(target_video) # from ffmpeg
-            # video_name = os.path.splitext(os.path.basename(target_video))[0]
+            # Post-processing prepare 1. csv to sequence vector
+            event_sequence = get_event_sequence_from_csv(predict_csv_path)
 
-            # # 1. 비디오 복사 (만약 input path 와 output path 가 동일하면, 해당 과정 생략)
-            # if input_path != output_base_path:
-            #     video_copy_to_save_dir(target_video, output_path)
-            # else:
-            #     print("\nINPUT PATH and OUTPUT PATH are same. No duplicating : {}\n".format(input_path))
-
-            
-            # # 22.01.07 hg comment, 각 사용함수 내부에 결과가 저장되는 dir이 따로따로 조합되어 결과 저장경로를 하위까지 조합하여 parameter로 넘겨주었습니다. (~/frames, ~/results)
-            
-            # ## 2. 비디오 전처리 (frmae 추출) -> 임시 디렉토리
-            # frame_save_path = frame_cutting(target_video, frame_save_path = os.path.join(output_path, 'frames')) # 22.01.07 hg modify, output_path에 처리되도록 변경 및 processed dir 반환
-
-            # ## 3. inference (비디오 단위) -> 저장 디렉토리 & result csv 생성 
-            # # 22.01.07 hg modify, target_video -> frame_save_path로 변경, inference_interval 추가
-            # predict_csv_path = inference(target_dir = frame_save_path, inference_interval = inference_interval, result_save_path = os.path.join(output_path, 'results'), model_path = model_path) # model_path 는 args 로 받아도 될 듯.
-
-            # # prepare 1. csv to sequence vector
-            # event_sequence = get_event_sequence_from_csv(predict_csv_path)
-
-            # prepare 2. apply PP module
+            # Post-processing prepare 2. apply PP module
             predict_csv_path = apply_post_processing(predict_csv_path, seq_fps) # csv vector to applid pp csv vector
             event_sequence = get_event_sequence_from_csv(predict_csv_path) # reload - applied pp csv vector
 
-            # prepare 3. check unmatching total frame
+            # Post-processing prepare 3. check unmatching total frame
             frame_cnt = len(glob.glob(os.path.join(frame_save_path, '*.jpg')))
-            if frame_cnt < totalFrame:
-                print('>>>>> UNMATCH FRAME CNT <<<<< \t extrated frame_cnt : {} \t < \t totalFrame by ffmpeg : {} '.format(frame_cnt, totalFrame))  # TODO - logging
+            if frame_cnt != totalFrame:
+                print('>>>>> UNMATCH FRAME CNT <<<<< \t extrated frame_cnt : {} \t != \t totalFrame by ffmpeg : {} '.format(frame_cnt, totalFrame))  # TODO - logging
                 totalFrame = frame_cnt           
 
-            # ## 4. 22.01.07 hg new add, save annotation by inference (hvat form)
-            # report_annotation(frameRate, totalFrame, width, height, video_name, event_sequence, inference_interval, os.path.join(output_path, 'results', '{}-annotation_by_inference.json'.format(video_name)))
+            ## save annotation by inference (hvat form)
+            report_annotation(frameRate, totalFrame, width, height, video_name, event_sequence, inference_interval, result_save_path=os.path.join(inference_json_output_path, '{}-annotation_by_inference.json'.format(video_name)))
 
-            # ## 5. 비디오 편집 (ffmpep script)
-            # video_editing(target_video, event_sequence, os.path.join(output_path, 'results', '{}-edit.mp4'.format(video_name)), inference_interval, frameRate)
+            ## 비디오 편집 (ffmpep script)
+            video_editing(video_path=target_video, event_sequence=event_sequence, editted_video_path=os.path.join(edited_video_output_path, '{}-edit.mp4'.format(video_name)), inference_interval=inference_interval, video_fps=frameRate)
             
-            # ## 6. meta_log 파일 생성 & 임시 디렉토리 삭제
-            # save_meta_log(target_video, output_base_path)
+            ## meta_log 파일 생성 & 임시 디렉토리 삭제
+            save_meta_log(target_video=target_video, base_output_path=base_output_path)
 
-            # exit(0)
+            ## 임시 디렉토리 삭제
+            del_frames(frame_save_path)
 
 
 if __name__ == '__main__':
@@ -484,6 +461,5 @@ if __name__ == '__main__':
         base_path = path.dirname(path.dirname(path.abspath(__file__)))
         sys.path.append(base_path)
         sys.path.append(base_path+'/core')
-        print(base_path)
 
     main()
