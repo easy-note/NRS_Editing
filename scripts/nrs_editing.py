@@ -354,7 +354,38 @@ def check_exist_dupli_video(target_video, output_path):
             return True
 
     return False
-        
+
+# predict csv to applied-pp predict csv
+def apply_post_processing(predict_csv_path, seq_fps):
+    import os
+    import pandas as pd
+    from core.api.post_process import FilterBank
+    
+    # 1. load predict df
+    predict_df = pd.read_csv(predict_csv_path, index_col=0)
+    event_sequence = predict_df['predict'].tolist()
+
+    # 2. apply pp sequence
+    #### use case 1. best filter
+    fb = FilterBank(event_sequence, seq_fps)
+    best_pp_seq_list = fb.apply_best_filter()
+
+    #### use case 2. custimize filter
+    '''
+    best_pp_seq_list = fb.apply_filter(event_sequence, "opening", kernel_size=3)
+    best_pp_seq_list = fb.apply_filter(best_pp_seq_list, "closing", kernel_size=3)
+    '''
+
+    predict_df['predict'] = best_pp_seq_list
+
+    # 3. save pp df
+    d_, f_ = os.path.split(predict_csv_path)
+    f_name, _ = os.path.splitext(f_)
+
+    results_path = os.path.join(d_, '{}-pp.csv'.format(f_name)) # renaming file of pp
+    predict_df.to_csv(results_path)
+
+    return results_path
     
 def main():
     import os
@@ -368,10 +399,12 @@ def main():
     inference_json_output_path = os.path.join(base_output_path, 'inference_json') # '/data3/Public/ViHUB-pro/results/inference_json'
     edited_video_output_path = os.path.join(base_output_path, 'edited_video') # '/data3/Public/ViHUB-pro/results/edited_video'
 
-    # 22.01.07 hg comment, 우선 모델 불어올때만 args가 이용되고, 나머지는 최대한 args에 의존되지 않도록 처리하기 위해 변수화 시켰습니다.
-    # 추후 args로 받아올 경우 해당 변수를 args. 로 초기화
-    inference_interval = 30
-    model_path = '/NRS_EDITING/logs_sota/mobilenetv3_large_100-general-rs/version_1/checkpoints/epoch=19-Mean_metric=0.9903-best.ckpt'
+
+     # 22.01.07 hg comment, 우선 모델 불어올때만 args가 이용되고, 나머지는 최대한 args에 의존되지 않도록 처리하기 위해 변수화 시켰습니다.
+     # 추후 args로 받아올 경우 해당 변수를 args. 로 초기화
+    seq_fps = 1 # pp module (1 fps 로 inference) - pp에서 사용 (variable이 고정되어 30 fps인 비디오만 사용하는 시나이오로 적용, 비디오에 따라 유동적으로 var이 변하도록 계산하는게 필요해보임)
+    inference_interval = 30 # frame inference interval - 전체사용 (variable이 고정되어 30 fps인 비디오를 1fps로 Infeence 하는 시나리오로 적용, 비디오에 따라 유동적으로 var이 변하도록 계산하는게 필요해보임)
+    model_path = '/NRS_EDITING/logs_sota/mobilenetv3_large_100-theator_stage100-offline-sota/version_4/checkpoints/epoch=60-Mean_metric=0.9875-best.ckpt'
 
 
     for (root, dirs, files) in os.walk(input_path):
@@ -422,11 +455,15 @@ def main():
             # # prepare 1. csv to sequence vector
             # event_sequence = get_event_sequence_from_csv(predict_csv_path)
 
-            # # prepare 2. check unmatching total frame
-            # frame_cnt = len(glob.glob(os.path.join(frame_save_path, '*.jpg')))
-            # if frame_cnt != totalFrame:
-            #     print('>>>>> UNMATCH FRAME CNT <<<<< \t extrated frame_cnt : {} \t != \t totalFrame by ffmpeg : {} '.format(frame_cnt, totalFrame))  # TODO - logging
-            #     totalFrame = frame_cnt            
+            # prepare 2. apply PP module
+            predict_csv_path = apply_post_processing(predict_csv_path, seq_fps) # csv vector to applid pp csv vector
+            event_sequence = get_event_sequence_from_csv(predict_csv_path) # reload - applied pp csv vector
+
+            # prepare 3. check unmatching total frame
+            frame_cnt = len(glob.glob(os.path.join(frame_save_path, '*.jpg')))
+            if frame_cnt < totalFrame:
+                print('>>>>> UNMATCH FRAME CNT <<<<< \t extrated frame_cnt : {} \t < \t totalFrame by ffmpeg : {} '.format(frame_cnt, totalFrame))  # TODO - logging
+                totalFrame = frame_cnt           
 
             # ## 4. 22.01.07 hg new add, save annotation by inference (hvat form)
             # report_annotation(frameRate, totalFrame, width, height, video_name, event_sequence, inference_interval, os.path.join(output_path, 'results', '{}-annotation_by_inference.json'.format(video_name)))
