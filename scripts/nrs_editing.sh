@@ -1,6 +1,3 @@
-# 21.11.26 off-line mc assets 뽑기
-# [고정] hem_extract_mode:all-offline / random_seed:3829 / IB_ratio:3 / WS_ratio:2 / mc:5
-
 top_ratio=(0.10);
 
 WS_ratio=4;
