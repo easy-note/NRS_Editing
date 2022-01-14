@@ -237,17 +237,25 @@ def get_event_sequence_from_csv(predict_csv_path):
 def main():
     import os
     import glob
-
-    dataset1_video_path = '/input_video/train_100/Dataset1' # 도커 경로에 ~./input_video 로 되어 있으면 input_video path 로 인식.
-    dataset2_video_path = '/input_video/train_100/Dataset2' # 도커 경로에 ~./input_video 로 되어 있으면 input_video path 로 인식.
+    import re
 
     annotation_by_inference_path = ''
     annotation_by_inference_json = glob.glob(os.path.join(annotation_by_inference_path, '*', '*', '*.json'))
-    annotation_by_inference_csv = glob.glob(os.path.join(annotation_by_inference_path, '*', '*', '*.csv'))
-    annotation_by_inference_pp_csv = glob.glob(os.path.join(annotation_by_inference_path, '*', '*', '*-pp.json'))
+    annotation_by_inference_total_csv = glob.glob(os.path.join(annotation_by_inference_path, '*', '*', '.csv'))
     
-    input_path = '/NAS1/input_path'
-    base_output_path = '/NAS1/results'
+    annotation_by_inference_csv = []
+    annotation_by_inference_pp_csv = []
+
+    for f_csv in annotation_by_inference_total_csv:
+        split_list = f_csv.split('-')
+        if len(split_list) == 1:
+            annotation_by_inference_csv.append(f_csv)
+
+        elif len(split_list) == 2:
+            annotation_by_inference_pp_csv.append(f_csv)
+
+    input_path = '/ai_shared/ViHUB-pro/input_video'
+    base_output_path = '/ai_shared/ViHUB-pro/results'
 
     # 추후 args로 받아올 경우 해당 변수를 args. 로 초기화
     seq_fps = 1 # pp module (1 fps 로 inference) - pp에서 사용 (variable이 고정되어 30 fps인 비디오만 사용하는 시나이오로 적용, 비디오에 따라 유동적으로 var이 변하도록 계산하는게 필요해보임)
