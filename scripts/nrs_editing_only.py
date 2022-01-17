@@ -208,13 +208,13 @@ def anno_copy_to_save_dir(target_anno, output_path):
     import os
     import shutil
 
-    print('\nVideo copying ...')
+    print('\Anno copying ...')
 
     f_anno_name = target_anno.split('/')[-1]
 
     # copy target_video
-    print('COPY {} \n==========> {}\n'.format(target_video, os.path.join(output_path, f_anno_name))) # /data3/Public/ViHUB-pro/results/inference_json/train_100/Dataset1/R_2/01_G_01_R_2_ch1_01/01_G_01_R_2_ch1_01.json
-    shutil.copy2(target_video, os.path.join(output_path, f_anno_name))
+    print('COPY {} \n==========> {}\n'.format(target_anno, os.path.join(output_path, f_anno_name))) # /data3/Public/ViHUB-pro/results/inference_json/train_100/Dataset1/R_2/01_G_01_R_2_ch1_01/01_G_01_R_2_ch1_01.json
+    shutil.copy2(target_anno, os.path.join(output_path, f_anno_name))
 
     predict_csv_path = os.path.join(output_path, f_anno_name)
 
@@ -239,23 +239,41 @@ def main():
     import glob
     import re
 
-    annotation_by_inference_path = ''
-    annotation_by_inference_json = glob.glob(os.path.join(annotation_by_inference_path, '*', '*', '*.json'))
-    annotation_by_inference_total_csv = glob.glob(os.path.join(annotation_by_inference_path, '*', '*', '.csv'))
+    annotation_by_inference_path = '/nas1/ViHUB-pro/inference_json'
+    annotation_by_inference_json = glob.glob(os.path.join(annotation_by_inference_path, '*', '*', '*' ,'*.json'))
+    annotation_by_inference_total_csv = glob.glob(os.path.join(annotation_by_inference_path, '*', '*', '*', '*.csv'))
     
     annotation_by_inference_csv = []
     annotation_by_inference_pp_csv = []
 
     for f_csv in annotation_by_inference_total_csv:
-        split_list = f_csv.split('-')
+        split_list = f_csv.split('/')[-1].split('-')
         if len(split_list) == 1:
             annotation_by_inference_csv.append(f_csv)
 
-        elif len(split_list) == 2:
+        if len(split_list) == 2:
             annotation_by_inference_pp_csv.append(f_csv)
 
-    input_path = '/ai_shared/ViHUB-pro/input_video'
-    base_output_path = '/ai_shared/ViHUB-pro/results'
+    # print('******************'*3)
+    # print('inference_json', len(annotation_by_inference_json))
+    # for i in annotation_by_inference_json:
+    #     print(i)
+    # print('\n\n')
+    
+    # print('inference_csv', len(annotation_by_inference_csv))
+    # for i in annotation_by_inference_csv:
+    #     print(i)
+    # print('\n\n')
+    
+    # print('inference_pp_csv', len(annotation_by_inference_pp_csv))
+    # for i in annotation_by_inference_pp_csv:
+    #     print(i)
+
+    # print('\n\n')
+    # print('******************'*3)
+
+    input_path = '/nas1/ViHUB-pro/input_video'
+    base_output_path = '/nas1/ViHUB-pro/results'
 
     # 추후 args로 받아올 경우 해당 변수를 args. 로 초기화
     seq_fps = 1 # pp module (1 fps 로 inference) - pp에서 사용 (variable이 고정되어 30 fps인 비디오만 사용하는 시나이오로 적용, 비디오에 따라 유동적으로 var이 변하도록 계산하는게 필요해보임)
@@ -263,14 +281,14 @@ def main():
     model_path = '/NRS_EDITING/logs_sota/mobilenetv3_large_100-theator_stage100-offline-sota/version_4/checkpoints/epoch=60-Mean_metric=0.9875-best.ckpt'
 
 
-    for (root, dirs, files) in os.walk(input_path):
+    for (root, dirs, files) in os.walk(input_path): # 비디오
 
         for file in files:
             
             target_video = os.path.join(root, file)
-            core_output_path = extract_target_video_path(target_video) # 'train_100/Dataset1/01_G_01_R_2_ch1_01'
-            inference_json_output_path = os.path.join(base_output_path, 'inference_json', core_output_path) # '/data3/Public/ViHUB-pro/results + inference_json + train_100/Dataset1/R_2/01_G_01_R_2_ch1_01'
-            edited_video_output_path = os.path.join(base_output_path, 'edited_video', core_output_path) # '/data3/Public/ViHUB-pro/results + edited_video + train_100/Dataset1/R_2/01_G_01_R_2_ch1_01'
+            core_output_path = extract_target_video_path(target_video) # 'train_100/R_2/01_G_01_R_2_ch1_01'
+            inference_json_output_path = os.path.join(base_output_path, 'inference_json', core_output_path) # '/data3/Public/ViHUB-pro/results + inference_json + train_100/R_2/01_G_01_R_2_ch1_01'
+            edited_video_output_path = os.path.join(base_output_path, 'edited_video', core_output_path) # '/data3/Public/ViHUB-pro/results + edited_video + train_100/R_2/01_G_01_R_2_ch1_01'
 
             #########################################################################################
             
@@ -300,8 +318,13 @@ def main():
                 if core_output_path.split('/')[-1] == f_anno.split('/')[-1].split('-')[0]:
                     target_pp_csv_anno = f_anno
 
+            
             if target_json_anno == None:
+                # print('* json 없어서 실행 안 함 *')
+                # print(target_video)
                 continue
+
+            
 
             #########################################################################################
 
@@ -320,11 +343,11 @@ def main():
             ## 비디오 복사
             video_copy_to_save_dir(target_video=target_video, output_path=inference_json_output_path)
 
-            ## annotation_by_inference 복사
+            # annotation_by_inference 복사
             predict_json_path = anno_copy_to_save_dir(target_anno=target_json_anno, output_path=inference_json_output_path)
             predict_csv_path = anno_copy_to_save_dir(target_anno=target_csv_anno, output_path=inference_json_output_path)
             predict_pp_csv_path = anno_copy_to_save_dir(target_anno=target_pp_csv_anno, output_path=inference_json_output_path)
-            
+
             ## 비디오 전처리 (frmae 추출) -> 임시 디렉토리
             # frame_save_path = frame_cutting(target_video=target_video, frame_save_path = os.path.join(inference_json_output_path, 'frames')) 
             
