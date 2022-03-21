@@ -500,8 +500,7 @@ def main():
             video_copy_to_save_dir(target_video=target_video, output_path=inference_json_output_path)
             
             ## 비디오 전처리 (frmae 추출) -> 임시 디렉토리
-            # frame_save_path = frame_cutting(target_video=target_video, frame_save_path = os.path.join(inference_json_output_path, 'frames')) 
-            frame_save_path = os.path.join(inference_json_output_path, 'frames')
+            frame_save_path = frame_cutting(target_video=target_video, frame_save_path = os.path.join(inference_json_output_path, 'frames')) 
 
             ## inference (비디오 단위) -> 저장 디렉토리 & result csv 생성 
             predict_csv_path = inference(target_dir = frame_save_path, inference_interval = inference_interval, result_save_path = inference_json_output_path, model_path = model_path) 
