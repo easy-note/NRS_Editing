@@ -28,8 +28,9 @@ class AnnotationParser():
         for anno_data in self.json_data['annotations'] :
             start = anno_data['start'] # start frame number
             end = anno_data['end'] # end frame number
+            code = anno_data.get('code', -100)
 
-            annotation_idx_list.append([start, end]) # annotation_idx_list = [[start, end], [start, end]..]
+            annotation_idx_list.append([start, end, code]) # annotation_idx_list = [[start, end, code], [start, end, code]..]
 
         return annotation_idx_list
 
@@ -38,7 +39,7 @@ class AnnotationParser():
         event_sequence = np.array([self.IB_CLASS]*self.get_totalFrame())
         annotation_idx_list = self.get_annotations_info()
         
-        for start, end in annotation_idx_list:
+        for start, end, code in annotation_idx_list:
             event_sequence[start: end+1] = self.OOB_CLASS
         
         return event_sequence.tolist()[::extract_interval]

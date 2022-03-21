@@ -16,12 +16,34 @@ def decode_list(run_length): # run_length -> [0,1,1,1,1,0 ...]
 def idx_to_time(idx, fps) :
         time_s = idx // fps
         frame = int(idx % fps)
+        ms = round(1/fps * frame, 2)
 
-        converted_time = str(datetime.timedelta(seconds=time_s))
-        converted_time = converted_time + '.' + str(frame)
+        # converted_time = converted_time + '.' + str(frame) # h:m:s.frame
+        converted_time = str(datetime.timedelta(seconds=time_s + ms)) # h:m:s:.ms
+
+        # exception 
+        if ms == 0:
+            converted_time = converted_time + '.00'
 
         return converted_time
 
+def time_to_sec(time_str):
+        sec = 0
+        
+        dateFormatter = "%H:%M:%S.%f"
+        datetime_obj = datetime.datetime.strptime(time_str, dateFormatter)
+        sec = (datetime_obj-datetime.datetime(1900, 1, 1)).total_seconds()
+        
+        return sec
+
+def sec_to_time(sec):
+        converted_time = str(datetime.timedelta(seconds=sec)) # h:m:s.ms
+
+        # exception
+        if sec % 1 == 0:
+            converted_time = converted_time + '.00'
+
+        return converted_time
 
 def get_current_time():
     startTime = time.time()
