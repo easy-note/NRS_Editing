@@ -26,6 +26,9 @@ class ffmpegHelper():
             'extract_frame_by_index': ['ffmpeg', '-i', self.video_path, '-vf', '"select=eq(n\,{})"'.format(args.get('frame_index', self.EXCEPTION_NUM)), '-vframes', '1', self.results_dir + '/extracted_frame-{}.jpg'.format(args.get('frame_index', self.EXCEPTION_NUM))], # https://superuser.com/questions/1009969/how-to-extract-a-frame-out-of-a-video-using-ffmpeg
             'extract_frame_by_time': ['ffmpeg', '-i', self.video_path, '-ss', '{}'.format(args.get('time', self.EXCEPTION_NUM)), '-frames:v', '1', self.results_dir + '/extracted_frame-{}.jpg'.format(args.get('time', self.EXCEPTION_NUM))],
             'extract_video_clip': ['ffmpeg', '-i', self.video_path, '-ss', '{}'.format(args.get('start_time', self.EXCEPTION_NUM)), '-t', '{}'.format(args.get('duration', self.EXCEPTION_NUM)), '-c', 'copy', self.results_dir + '/clip-{}-{}.mp4'.format(args.get('start_time', str(self.EXCEPTION_NUM)).replace('.', ':'), args.get('duration', str(self.EXCEPTION_NUM).replace('.', ':')))],
+            # 'extract_video_marking_clip': ['ffmpeg', '-y', '-i', self.video_path, '-c:a copy', '-vf', "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='timestamp: %{pts \: flt}':x=500:y=500:fontsize=32:fontcolor=yellow@0.9:box=1:boxcolor=black@0.6", '-ss', '{}'.format(args.get('start_time', self.EXCEPTION_NUM)), '-to', '{}'.format(args.get('end_time', self.EXCEPTION_NUM)), self.results_dir + '/clip-{}-{}.mp4'.format(args.get('start_time', str(self.EXCEPTION_NUM)).replace('.', ':'), args.get('end_time', str(self.EXCEPTION_NUM).replace('.', ':')))], # v1
+            # 'extract_video_marking_clip': ['ffmpeg', '-y', '-i', self.video_path, '-c:a copy', '-vf', '"drawtext=enable=' + "\'between(t,{},{})\'".format(args.get('start_mark_time', self.EXCEPTION_NUM), args.get('end_mark_time'), self.EXCEPTION_NUM) + ':fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text=' + "'({})'".format(args.get('mark', self.EXCEPTION_NUM)) + ':x=(w)/2:y=(h)-100:fontsize=50:fontcolor=red@0.9:box=1:boxcolor=black@0.6', ', drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text=\'timestamp %{pts\:hms}\':x=100:y=50:fontsize=40:fontcolor=yellow@0.9:box=1:boxcolor=black@0.6"', '-ss', '{}'.format(args.get('start_time', self.EXCEPTION_NUM)), '-to', '{}'.format(args.get('end_time', self.EXCEPTION_NUM)), self.results_dir + '/clip-{}-{}.mp4'.format(args.get('start_time', str(self.EXCEPTION_NUM)).replace('.', ':'), args.get('end_time', str(self.EXCEPTION_NUM).replace('.', ':')))], # v2
+            'extract_video_marking_clip': ['ffmpeg', '-y', '-i', self.video_path, '-c:a copy', '-vf', '"drawtext=enable=' + "\'between(t,{},{})\'".format(args.get('start_mark_time', self.EXCEPTION_NUM), args.get('end_mark_time'), self.EXCEPTION_NUM) + ':fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text=' + "'({})'".format(args.get('mark', self.EXCEPTION_NUM)) + ':x=(w)/2:y=(h)-100:fontsize=50:fontcolor=red@0.9:box=1:boxcolor=black@0.6', ', drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text=\'timestamp %{pts\:hms}\':x=100:y=50:fontsize=40:fontcolor=yellow@0.9:box=1:boxcolor=black@0.6"', '-ss', '{}'.format(args.get('start_time', self.EXCEPTION_NUM)), '-to', '{}'.format(args.get('end_time', self.EXCEPTION_NUM)), self.results_dir + '/{}.mp4'.format(args.get('save_name', str(self.EXCEPTION_NUM)).replace('.', ':'))], # v3
             'merge_video_clip': ['ffmpeg', '-f', 'concat', '-safe', '0', '-i', '{}'.format(args.get('input_txt_path', self.EXCEPTION_NUM)), '-c', 'copy', args.get('merge_path', self.EXCEPTION_NUM)],
         }
 
@@ -103,7 +106,6 @@ class ffmpegHelper():
         cmd = self._process_cmd('extract_frame_by_index', frame_index=frame_index)
 
         print(cmd)
-        exit(0)
         
         print('EXTRACT FRAME BY INDEX : {}'.format(cmd), end= ' ')
 
@@ -133,4 +135,14 @@ class ffmpegHelper():
 
         self._cmd_call(cmd)
 
+    def extract_video_marking_clip(self, start_time, end_time, start_mark_time, end_mark_time, save_name, mark):
+        # https://stackoverflow.com/questions/38747518/ffmpeg-for-marking-time-video-based-on-a-reference-date
+        # https://ottverse.com/ffmpeg-drawtext-filter-dynamic-overlays-timecode-scrolling-text-credits/
+
+        ### frame_time= 00:00:05.01
+        cmd = self._process_cmd('extract_video_marking_clip', start_time=start_time, end_time=end_time, start_mark_time=start_mark_time, end_mark_time=end_mark_time, save_name=save_name, mark=mark)
+        
+        print('EXTRACT VIDEO MARKING CLIP : {}'.format(cmd), end= ' ')
+
+        self._cmd_call(cmd)
 
